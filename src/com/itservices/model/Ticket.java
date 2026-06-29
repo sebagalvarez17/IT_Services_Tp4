@@ -16,6 +16,7 @@ public class Ticket {
     private String prioridad;           // BAJA, MEDIA o ALTA (Afecta alertas visuales RFS09)
     private String estado;              // Abierto, En Proceso, Resuelto
     private String descripcionFalla;    // Detalle del problema (Mínimo 10 caracteres por validación)
+    private String resolucion;          // Nuevo atributo para persistir la resolución técnica
 
     // Relación 1 a 1: Contiene el detalle de la solución una vez que el ticket se cierra
     private DetalleLabor detalleLabor;
@@ -34,9 +35,10 @@ public class Ticket {
         this.estado = "Abierto";         // Estado inicial por defecto
         this.descripcionFalla = descripcionFalla;
         this.detalleLabor = null;        // Al crearse, todavía no posee tiempos de resolución cargados
+        this.resolucion = "";            // Inicialización vacía
     }
 
-    // Métodos de acceso (Getters y Setters) requeridos por el controlador y la interfaz visual
+    // Métodos de acceso (Getters y Setters)
     public int getTicketId() { return ticketId; }
     public EmpresaCliente getCliente() { return cliente; }
     public Activo getActivoAfectado() { return activoAfectado; }
@@ -45,11 +47,16 @@ public class Ticket {
     public String getPrioridad() { return prioridad; }
 
     public String getEstado() { return estado; }
-    public void setEstado(String estado) { this.estado = estado; } // Permite cambiar el estado en las transiciones
+    public void setEstado(String estado) { this.estado = estado; }
 
     public String getDescripcionFalla() { return descripcionFalla; }
 
+    // Métodos para manejar la resolución técnica
+    public String getResolucion() { return resolucion; }
+    public void setResolucion(String resolucion) { this.resolucion = resolucion; }
+
     public DetalleLabor getDetalleLabor() { return detalleLabor; }
+
     /**
      * Vincula el detalle de la labor técnica al ticket.
      * Se invoca de forma obligatoria durante el proceso de cierre e imputación de tiempos (CU003).

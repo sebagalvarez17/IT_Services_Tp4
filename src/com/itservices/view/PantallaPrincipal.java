@@ -3,11 +3,11 @@ package com.itservices.view;
 import com.itservices.controller.GestorTickets;
 import com.itservices.model.*;
 
-import javax.swing.*;
-import javax.swing.table.DefaultTableCellRenderer;
+        import javax.swing.*;
+        import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.event.ItemEvent;
+        import java.awt.event.ItemEvent;
 
 /**
  * Interfaz Gráfica de Usuario Final (Capa de Vista - Swing Puro).
@@ -27,7 +27,6 @@ public class PantallaPrincipal extends JFrame {
     // Componentes de la Bandeja de Trabajo
     private JTable tablaTickets;
     private DefaultTableModel modeloTabla;
-    private int proximoId = 1;
 
     public PantallaPrincipal() {
         this.controlador = new GestorTickets();
@@ -62,7 +61,7 @@ public class PantallaPrincipal extends JFrame {
 
         fGbc.gridx = 0; fGbc.gridy = 0; panelForm.add(new JLabel("Nro Ticket:"), fGbc);
         fGbc.gridx = 1;
-        txtIdTicket = new JTextField(String.valueOf(proximoId), 5);
+        txtIdTicket = new JTextField("NUEVO", 5);
         txtIdTicket.setEditable(false);
         panelForm.add(txtIdTicket, fGbc);
 
@@ -177,22 +176,29 @@ public class PantallaPrincipal extends JFrame {
         actualizarGrilla();
     }
 
+
     /**
      * Actualiza dinámicamente el selector de activos según la empresa cliente seleccionada.
-     * Incorpora la opción genérica "SIN ACTIVOS ASOCIADOS" para incidentes globales.
+     * Sincroniza dinámicamente con los datos vivos de la Base de Datos.
      */
     private void actualizarComboActivos() {
+        if (cmbActivos == null) return;
+
         cmbActivos.removeAllItems();
 
-        // 1. Insertamos primero la opción comodín por defecto (Evita que obligue a elegir hardware/software)
-        // Pasamos null como ID y una descripción clara para que el sistema lo procese sin romperse
+        // 1. Insertamos el comodín por defecto
         cmbActivos.addItem(new Activo(0, " [ SIN ACTIVOS ASOCIADOS ] ") {});
 
-        // 2. Cargamos los activos específicos que tiene registrados esa empresa en particular
+        // 2. Cargamos los activos específicos buscando al cliente real de la lista actualizada del controlador
         EmpresaCliente clienteSeleccionado = (EmpresaCliente) cmbClientes.getSelectedItem();
         if (clienteSeleccionado != null) {
-            for (Activo activo : clienteSeleccionado.getListaActivos()) {
-                cmbActivos.addItem(activo);
+            for (EmpresaCliente c : controlador.getListaClientes()) {
+                if (c.getIdEmpresa() == clienteSeleccionado.getIdEmpresa()) {
+                    for (Activo activo : c.getListaActivos()) {
+                        cmbActivos.addItem(activo);
+                    }
+                    break;
+                }
             }
         }
     }
@@ -204,15 +210,14 @@ public class PantallaPrincipal extends JFrame {
         String prioridad = (String) cmbPrioridad.getSelectedItem();
         String descripcion = txtDescripcion.getText();
 
-        String resultado = controlador.registrarIncidencia(proximoId, cliente, activo, tecnico, prioridad, descripcion);
+        String resultado = controlador.registrarIncidencia(cliente, activo, tecnico, prioridad, descripcion);
 
         if (resultado.startsWith("Error")) {
-            JOptionPane.showMessageDialog(this, resultado, "Validación de Datos", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, resultado, "Validación", JOptionPane.WARNING_MESSAGE);
         } else {
-            JOptionPane.showMessageDialog(this, resultado, "Transacción Exitosa", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, resultado, "Éxito", JOptionPane.INFORMATION_MESSAGE);
             txtDescripcion.setText("");
-            proximoId++;
-            txtIdTicket.setText(String.valueOf(proximoId));
+            txtIdTicket.setText("N/A");
             actualizarGrilla();
         }
     }
@@ -227,16 +232,48 @@ public class PantallaPrincipal extends JFrame {
         int idTicket = (int) modeloTabla.getValueAt(filaSeleccionada, 0);
         String estadoActual = (String) modeloTabla.getValueAt(filaSeleccionada, 5);
 
-        if ("Resuelto".equals(estadoActual)) {
-            JOptionPane.showMessageDialog(this, "Este incidente ya se encuentra resuelto.", "Información", JOptionPane.INFORMATION_MESSAGE);
-            return;
+        // Buscamos el ticket en memoria para recuperar los datos actuales si es una edición
+        Ticket ticketEncontrado = null;
+        for (Ticket t : controlador.getListaTickets()) {
+            if (t.getTicketId() == idTicket) {
+                ticketEncontrado = t;
+                break;
+            }
         }
 
-        JTextField txtFechaLabor = new JTextField("03/06/2026", 10);
-        JTextField txtHoraInicio = new JTextField("14:00", 5);
-        JTextField txtHoras = new JTextField("1", 3);
-        JTextField txtMinutos = new JTextField("0", 3);
-        JTextArea txtResolucion = new JTextArea(3, 25);
+
+        // SI YA ESTÁ RESUELTO, CAMBIAMOS EL COMPORTAMIENTO A MODO EDICIÓN
+        // Definimos los valores por defecto antes del condicional
+        String fechaDefecto = "28/06/2026";
+        String horaDefecto = "14:00";
+        String horasDefecto = "1";
+        String minutosDefecto = "0";
+        String resolucionDefecto = "";
+        String tituloVentana = "Imputación de Tiempos - Ticket N° " + idTicket;
+
+// Verificamos si existe el objeto y si tiene labor cargada
+        boolean esEdicion = (ticketEncontrado != null && ticketEncontrado.getDetalleLabor() != null);
+
+        if (esEdicion) {
+            // Si es edición, sobreescribimos los valores por defecto con los que están en la base de datos
+            DetalleLabor labor = ticketEncontrado.getDetalleLabor();
+            fechaDefecto = labor.getFechaLabor();
+            horaDefecto = labor.getHoraInicio();
+            horasDefecto = String.valueOf(labor.getHorasInvertidas());
+            minutosDefecto = String.valueOf(labor.getMinutosInvertidos());
+            resolucionDefecto = labor.getResolucion();
+            tituloVentana = "CORREGIR LABOR TÉCNICA - Ticket N° " + idTicket;
+        } else if ("Resuelto".equals(estadoActual)) {
+            // Protección adicional por si hay inconsistencias en la base de datos
+            JOptionPane.showMessageDialog(this, "El ticket figura como 'Resuelto' pero no se hallaron registros de labor.", "Alerta de Integridad", JOptionPane.WARNING_MESSAGE);
+        }
+
+        // Construimos los componentes visuales con los datos cargados correspondientes
+        JTextField txtFechaLabor = new JTextField(fechaDefecto, 10);
+        JTextField txtHoraInicio = new JTextField(horaDefecto, 5);
+        JTextField txtHoras = new JTextField(horasDefecto, 3);
+        JTextField txtMinutos = new JTextField(minutosDefecto, 3);
+        JTextArea txtResolucion = new JTextArea(resolucionDefecto, 3, 25);
         txtResolucion.setLineWrap(true);
 
         JPanel panelInputLabor = new JPanel(new GridLayout(0, 1, 2, 4));
@@ -251,7 +288,7 @@ public class PantallaPrincipal extends JFrame {
         panelInputLabor.add(new JLabel("Resolución Técnica (Acciones Tomadas):"));
         panelInputLabor.add(new JScrollPane(txtResolucion));
 
-        int opcion = JOptionPane.showConfirmDialog(this, panelInputLabor, "Imputación de Tiempos - Ticket N° " + idTicket, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int opcion = JOptionPane.showConfirmDialog(this, panelInputLabor, tituloVentana, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 
         if (opcion == JOptionPane.OK_OPTION) {
             try {
@@ -261,12 +298,18 @@ public class PantallaPrincipal extends JFrame {
                 int minutos = Integer.parseInt(txtMinutos.getText().trim());
                 String resolucion = txtResolucion.getText();
 
-                String resultado = controlador.imputarLaborYCerrar(idTicket, fecha, horaIn, horas, minutos, resolucion);
+                String resultado;
+                // Si estaba resuelto llama a actualizar, sino llama a cerrar por primera vez
+                if (esEdicion) {
+                    resultado = controlador.actualizarLabor(idTicket, fecha, horaIn, horas, minutos, resolucion);
+                } else {
+                    resultado = controlador.imputarLaborYCerrar(idTicket, fecha, horaIn, horas, minutos, resolucion);
+                }
 
                 if (resultado.startsWith("Error")) {
                     JOptionPane.showMessageDialog(this, resultado, "Error", JOptionPane.ERROR_MESSAGE);
                 } else {
-                    JOptionPane.showMessageDialog(this, resultado, "Caso Cerrado", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(this, resultado, "Operación Exitosa", JOptionPane.INFORMATION_MESSAGE);
                     actualizarGrilla();
                 }
             } catch (NumberFormatException ex) {
@@ -310,14 +353,24 @@ public class PantallaPrincipal extends JFrame {
                 detalle.append("• Franja Horaria de Inicio: ").append(labor.getHoraInicio()).append(" hs\n");
                 detalle.append("• Tiempo Invertido Acumulado: ").append(labor.getHorasInvertidas()).append(" hrs ").append(labor.getMinutosInvertidos()).append(" min\n");
                 detalle.append("• Informe de Cierre Resolutivo: \n  \"").append(labor.getResolucion()).append("\"\n");
+            } else if ("Resuelto".equals(ticketEncontrado.getEstado())) {
+                // MODIFICACIÓN AQUÍ: Ahora mostramos la resolución que cargamos en el objeto Ticket
+                detalle.append("=== RESOLUCIÓN TÉCNICA ===\n");
+                detalle.append("• Acciones Tomadas: \n  \"").append(ticketEncontrado.getResolucion()).append("\"\n");
             } else {
                 detalle.append("[!] Alerta: El ticket se encuentra pendiente de asignación y resolución en el Help Desk.");
             }
 
-            JTextArea areaDetalle = new JTextArea(detalle.toString(), 14, 40);
+            JTextArea areaDetalle = new JTextArea(detalle.toString());
             areaDetalle.setEditable(false);
-            areaDetalle.setFont(new Font("Monospaced", Font.PLAIN, 12));
-            JOptionPane.showMessageDialog(this, new JScrollPane(areaDetalle), "Visor Técnico de Incidentes - IT Services", JOptionPane.INFORMATION_MESSAGE);
+            areaDetalle.setFont(new Font("Monospaced", Font.PLAIN, 13));
+            areaDetalle.setLineWrap(true);
+            areaDetalle.setWrapStyleWord(true);
+
+            JScrollPane scrollPane = new JScrollPane(areaDetalle);
+            scrollPane.setPreferredSize(new Dimension(650, 450));
+
+            JOptionPane.showMessageDialog(this, scrollPane, "Visor Técnico de Incidentes - IT Services", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -376,7 +429,19 @@ public class PantallaPrincipal extends JFrame {
     private void actualizarGrilla() {
         modeloTabla.setRowCount(0);
         for (Ticket t : controlador.getListaTickets()) {
-            Object[] fila = { t.getTicketId(), t.getCliente().getRazonSocial(), t.getActivoAfectado().getNombre(), t.getTecnicoAsignado().getNombreCompleto(), t.getPrioridad(), t.getEstado() };
+            // Validamos que los objetos existan antes de llamar a sus métodos
+            String nombreCliente = (t.getCliente() != null) ? t.getCliente().getRazonSocial() : "Sin Cliente";
+            String nombreActivo = (t.getActivoAfectado() != null) ? t.getActivoAfectado().getNombre() : "N/A";
+            String nombreTecnico = (t.getTecnicoAsignado() != null) ? t.getTecnicoAsignado().getNombreCompleto() : "Sin Asignar";
+
+            Object[] fila = {
+                    t.getTicketId(),
+                    nombreCliente,
+                    nombreActivo,
+                    nombreTecnico,
+                    t.getPrioridad(),
+                    t.getEstado()
+            };
             modeloTabla.addRow(fila);
         }
     }
